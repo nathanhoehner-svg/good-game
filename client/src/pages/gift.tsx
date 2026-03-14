@@ -1,150 +1,237 @@
 import { useState } from "react";
 import { useAuth } from "../App";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { ArrowLeft, Gift, Sparkles } from "lucide-react";
-import { Link } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useHashLocation } from "wouter/use-hash-location";
+import { useRoute } from "wouter";
+import type { User } from "@shared/schema";
+
+const categories = [
+  { id: "kindness", label: "Act of Kindness", emoji: "💚" },
+  { id: "volunteering", label: "Volunteering", emoji: "🤝" },
+  { id: "community", label: "Community Work", emoji: "🏘️" },
+  { id: "helping", label: "Helping Others", emoji: "🙌" },
+  { id: "generosity", label: "Generosity", emoji: "✨" },
+  { id: "encouragement", label: "Encouragement", emoji: "💪" },
+];
 
 export default function GiftPage() {
-  const { user, setUser } = useAuth();
-  const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const [recipient, setRecipient] = useState("");
-  const [message, setMessage] = useState("");
-  const [success, setSuccess] = useState<{ xpEarned: number; newLevel: number } | null>(null);
+  const { currentUser, setCurrentUser } = useAuth();
+  const { toast } = useToast();
+  const [, setLocation] = useHashLocation();
+  const [, params] = useRoute("/gift/:userId");
 
-  const sendGift = useMutation({
+  const [selectedUser, setSelectedUser] = useState<number | null>(
+    params?.userId ? Number(params.userId) : null
+  );
+  const [amount, setAmount] = useState(10);
+  const [message, setMessage] = useState("");
+  const [category, setCategory] = useState("kindness");
+  const [search, setSearch] = useState("");
+
+  const { data: allUsers } = useQuery<User[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const otherUsers = (allUsers ?? []).filter(u => u.id !== currentUser?.id);
+  const filteredUsers = search
+    ? otherUsers.filter(u =>
+        u.displayName.toLowerCase().includes(search.toLowerCase()) ||
+        u.username.toLowerCase().includes(search.toLowerCase())
+      )
+    : otherUsers;
+
+  const selectedUserObj = otherUsers.find(u => u.id === selectedUser);
+
+  const giftMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/gifts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipientUsername: recipient, message }),
+      if (!currentUser || !selectedUser) throw new Error("Select a recipient");
+      const res = await apiRequest("POST", "/api/gifts", {
+        fromUserId: currentUser.id,
+        toUserId: selectedUser,
+        amount,
+        message: message.trim() || undefined,
+        category,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send gift");
-      return data;
-    },
-    onSuccess: (data) => {
-      setSuccess({ xpEarned: 20, newLevel: data.senderLevel });
-      if (user) {
-        setUser({ ...user, xp: data.senderXp, level: data.senderLevel, giftsGiven: user.giftsGiven + 1 });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error);
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/gifts/sent"] });
-      setRecipient("");
+      return res.json();
+    },
+    onSuccess: async () => {
+      toast({
+        title: "Points gifted! 🎉",
+        description: `You gave ${amount} points to ${selectedUserObj?.displayName} for ${category}.`,
+      });
+      // Refresh user data
+      const res = await fetch(`/api/users/${currentUser!.id}`);
+      const updatedUser = await res.json();
+      setCurrentUser(updatedUser);
+      queryClient.invalidateQueries({ queryKey: ["/api/gifts/recent"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/leaderboard"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/users"] });
+      // Reset form
+      setSelectedUser(null);
+      setAmount(10);
       setMessage("");
+      setCategory("kindness");
+      setLocation("/");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Error", description: err.message, variant: "destructive" });
     },
   });
 
-  if (success) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <Card className="w-full max-w-md text-center">
-          <CardContent className="pt-8 pb-8">
-            <div className="text-6xl mb-4">🎉</div>
-            <h2 className="text-2xl font-bold text-foreground">Gift Sent!</h2>
-            <p className="text-muted-foreground mt-2">You spread some good vibes!</p>
-            <div className="mt-4 p-4 bg-primary/10 rounded-lg">
-              <p className="text-sm font-medium text-primary">+20 XP earned!</p>
-              {success.newLevel > (user?.level ?? 1) && (
-                <p className="text-sm font-bold text-yellow-600 mt-1">🎊 Level Up! You're now Level {success.newLevel}!</p>
-              )}
-            </div>
-            <div className="flex gap-2 mt-6">
-              <Button variant="outline" className="flex-1" onClick={() => setSuccess(null)}>
-                Send Another
-              </Button>
-              <Button className="flex-1" onClick={() => navigate("/")}>Home</Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  if (!currentUser) return null;
 
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Link to="/">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold text-foreground">Send a Gift</h1>
-        </div>
-      </header>
+    <div className="max-w-lg mx-auto px-4 pt-6 pb-4">
+      <div className="mb-6">
+        <h1 className="text-lg font-bold">Give Points</h1>
+        <p className="text-sm text-muted-foreground">
+          Recognize someone's goodness. You have <span className="font-semibold text-primary">{currentUser.pointsBalance} points</span> to give.
+        </p>
+      </div>
 
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Gift className="h-5 w-5 text-primary" />
-              Gift a Player
-            </CardTitle>
-            <CardDescription>
-              Send a gift to brighten someone's day. You earn +20 XP per gift (up to 3/day).
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                sendGift.mutate();
-              }}
-              className="space-y-4"
-            >
-              <div className="space-y-2">
-                <Label htmlFor="recipient">Recipient Username</Label>
-                <Input
-                  id="recipient"
-                  value={recipient}
-                  onChange={(e) => setRecipient(e.target.value)}
-                  placeholder="Enter their username"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="message">Message (optional)</Label>
-                <Input
-                  id="message"
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  placeholder="Write a nice message..."
-                  maxLength={200}
-                />
-              </div>
-              {sendGift.isError && (
-                <p className="text-sm text-destructive">
-                  {(sendGift.error as Error).message}
-                </p>
-              )}
-              <Button type="submit" className="w-full" disabled={sendGift.isPending}>
-                {sendGift.isPending ? (
-                  "Sending..."
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Send Gift (+20 XP)
-                  </>
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <span>💡</span>
-              <p>You can send up to 3 gifts per day. Each gift earns you 20 XP!</p>
+      {/* Step 1: Select Person */}
+      {!selectedUser ? (
+        <div>
+          <label className="text-sm font-medium mb-2 block">Who did something good?</label>
+          <Input
+            data-testid="input-search-user"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name..."
+            className="mb-3"
+          />
+          {filteredUsers.length === 0 ? (
+            <Card>
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-muted-foreground">No other users found. Invite your family to join Good Game.</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {filteredUsers.map((user) => (
+                <Card
+                  key={user.id}
+                  className="hover-elevate cursor-pointer"
+                  onClick={() => setSelectedUser(user.id)}
+                  data-testid={`select-user-${user.id}`}
+                >
+                  <CardContent className="py-3 px-4 flex items-center gap-3">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
+                      style={{ backgroundColor: user.avatarColor }}
+                    >
+                      {user.displayName[0]?.toUpperCase()}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold">{user.displayName}</p>
+                      <p className="text-xs text-muted-foreground">@{user.username} · Level {user.level}</p>
+                    </div>
+                    <span className="text-muted-foreground">→</span>
+                  </CardContent>
+                </Card>
+              ))}
             </div>
-          </CardContent>
-        </Card>
-      </main>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-5">
+          {/* Selected user */}
+          <Card className="border-primary/30" data-testid="selected-user">
+            <CardContent className="py-3 px-4 flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold"
+                style={{ backgroundColor: selectedUserObj?.avatarColor }}
+              >
+                {selectedUserObj?.displayName[0]?.toUpperCase()}
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-semibold">{selectedUserObj?.displayName}</p>
+                <p className="text-xs text-muted-foreground">@{selectedUserObj?.username}</p>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedUser(null)}
+                data-testid="button-change-user"
+              >
+                Change
+              </Button>
+            </CardContent>
+          </Card>
+
+          {/* Amount */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">How many points?</label>
+            <div className="flex gap-2 flex-wrap">
+              {[5, 10, 25, 50, 100].map((val) => (
+                <Button
+                  key={val}
+                  variant={amount === val ? "default" : "secondary"}
+                  size="sm"
+                  onClick={() => setAmount(val)}
+                  disabled={val > currentUser.pointsBalance}
+                  data-testid={`amount-${val}`}
+                >
+                  {val}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">What did they do?</label>
+            <div className="grid grid-cols-2 gap-2">
+              {categories.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setCategory(cat.id)}
+                  data-testid={`category-${cat.id}`}
+                  className={`p-3 rounded-lg text-left text-sm transition-all border ${
+                    category === cat.id
+                      ? "border-primary bg-primary/5 text-primary font-medium"
+                      : "border-border bg-card hover:bg-muted/50"
+                  }`}
+                >
+                  <span className="mr-1.5">{cat.emoji}</span>
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Message */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Message (optional)</label>
+            <Input
+              data-testid="input-gift-message"
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="e.g. Thanks for helping with dinner!"
+              maxLength={200}
+            />
+          </div>
+
+          {/* Submit */}
+          <Button
+            onClick={() => giftMutation.mutate()}
+            disabled={giftMutation.isPending}
+            className="w-full h-12 text-base font-semibold"
+            data-testid="button-send-gift"
+          >
+            {giftMutation.isPending ? "Sending..." : `Give ${amount} Points 🎁`}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
