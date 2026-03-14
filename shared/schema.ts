@@ -1,54 +1,73 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").notNull().unique(),
-  password: text("password").notNull(),
-  xp: integer("xp").notNull().default(0),
+  displayName: text("display_name").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  pointsBalance: integer("points_balance").notNull().default(0),
+  totalGiven: integer("total_given").notNull().default(0),
+  totalReceived: integer("total_received").notNull().default(0),
   level: integer("level").notNull().default(1),
-  giftsGiven: integer("gifts_given").notNull().default(0),
-  lastGiftDate: text("last_gift_date"),
-  joinDate: text("join_date").notNull(),
-  bio: text("bio").notNull().default(""),
+  streakDays: integer("streak_days").notNull().default(0),
+  lastAccrualDate: text("last_accrual_date"),
+  joinedAt: timestamp("joined_at").defaultNow(),
+  avatarColor: text("avatar_color").notNull().default("#4ECDC4"),
 });
 
 export const gifts = pgTable("gifts", {
   id: serial("id").primaryKey(),
-  senderId: integer("sender_id").notNull(),
-  recipientId: integer("recipient_id").notNull(),
-  message: text("message").notNull().default(""),
-  createdAt: text("created_at").notNull(),
+  fromUserId: integer("from_user_id").notNull(),
+  toUserId: integer("to_user_id").notNull(),
+  amount: integer("amount").notNull(),
+  message: text("message"),
+  category: text("category").notNull().default("kindness"),
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const quizQuestions = pgTable("quiz_questions", {
+export const lessons = pgTable("lessons", {
   id: serial("id").primaryKey(),
-  question: text("question").notNull(),
-  options: text("options").notNull(),
-  correctAnswer: text("correct_answer").notNull(),
-  xpReward: integer("xp_reward").notNull().default(10),
-  category: text("category").notNull().default("general"),
+  title: text("title").notNull(),
+  description: text("description").notNull(),
+  content: text("content").notNull(),
+  category: text("category").notNull(),
+  unlockLevel: integer("unlock_level").notNull().default(1),
+  iconName: text("icon_name").notNull().default("BookOpen"),
 });
 
-export const quizAnswers = pgTable("quiz_answers", {
+export const userLessons = pgTable("user_lessons", {
   id: serial("id").primaryKey(),
   userId: integer("user_id").notNull(),
-  questionId: integer("question_id").notNull(),
-  answeredAt: text("answered_at").notNull(),
+  lessonId: integer("lesson_id").notNull(),
+  completedAt: timestamp("completed_at").defaultNow(),
 });
-
-export type User = typeof users.$inferSelect;
-export type Gift = typeof gifts.$inferSelect;
-export type QuizQuestion = typeof quizQuestions.$inferSelect;
-export type QuizAnswer = typeof quizAnswers.$inferSelect;
 
 export const insertUserSchema = createInsertSchema(users).pick({
   username: true,
-  password: true,
-}).extend({
-  username: z.string().min(3).max(20).regex(/^[a-zA-Z0-9_]+$/, "Username can only contain letters, numbers, and underscores"),
-  password: z.string().min(6, "Password must be at least 6 characters"),
+  displayName: true,
 });
 
+export const insertGiftSchema = createInsertSchema(gifts).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertLessonSchema = createInsertSchema(lessons).omit({
+  id: true,
+});
+
+export const insertUserLessonSchema = createInsertSchema(userLessons).omit({
+  id: true,
+  completedAt: true,
+});
+
+export type User = typeof users.$inferSelect;
 export type InsertUser = z.infer<typeof insertUserSchema>;
+export type Gift = typeof gifts.$inferSelect;
+export type InsertGift = z.infer<typeof insertGiftSchema>;
+export type Lesson = typeof lessons.$inferSelect;
+export type InsertLesson = z.infer<typeof insertLessonSchema>;
+export type UserLesson = typeof userLessons.$inferSelect;
+export type InsertUserLesson = z.infer<typeof insertUserLessonSchema>;
