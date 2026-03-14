@@ -2,149 +2,172 @@ import { useState } from "react";
 import { useAuth } from "../App";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent } from "@/components/ui/card";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Eye, EyeOff } from "lucide-react";
 
 export default function LoginPage() {
-  const { login } = useAuth();
-  const [loginUsername, setLoginUsername] = useState("");
-  const [loginPassword, setLoginPassword] = useState("");
-  const [loginError, setLoginError] = useState("");
-  const [loginLoading, setLoginLoading] = useState(false);
+  const { setCurrentUser, isDark, toggleTheme } = useAuth();
+  const { toast } = useToast();
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [username, setUsername] = useState("");
+  const [displayName, setDisplayName] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const [regUsername, setRegUsername] = useState("");
-  const [regPassword, setRegPassword] = useState("");
-  const [regError, setRegError] = useState("");
-  const [regLoading, setRegLoading] = useState(false);
-
-  async function handleLogin(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setLoginError("");
-    setLoginLoading(true);
-    try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: loginUsername, password: loginPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setLoginError(data.error || "Login failed");
-      } else {
-        login(data);
-      }
-    } catch {
-      setLoginError("Network error");
-    } finally {
-      setLoginLoading(false);
-    }
-  }
+    if (!username.trim() || !password) return;
+    setLoading(true);
 
-  async function handleRegister(e: React.FormEvent) {
-    e.preventDefault();
-    setRegError("");
-    setRegLoading(true);
     try {
-      const res = await fetch("/api/auth/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: regUsername, password: regPassword }),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        setRegError(data.error || "Registration failed");
+      if (mode === "login") {
+        const res = await apiRequest("POST", "/api/login", {
+          username: username.trim().toLowerCase(),
+          password,
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          toast({ title: "Sign in failed", description: err.error, variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const user = await res.json();
+        setCurrentUser(user);
       } else {
-        login(data);
+        if (!displayName.trim()) {
+          toast({ title: "Name required", description: "Please enter your display name.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        if (password.length < 6) {
+          toast({ title: "Password too short", description: "Password must be at least 6 characters.", variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const res = await apiRequest("POST", "/api/users", {
+          username: username.trim().toLowerCase(),
+          displayName: displayName.trim(),
+          password,
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          toast({ title: "Error", description: err.error, variant: "destructive" });
+          setLoading(false);
+          return;
+        }
+        const user = await res.json();
+        setCurrentUser(user);
       }
-    } catch {
-      setRegError("Network error");
-    } finally {
-      setRegLoading(false);
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
     }
+    setLoading(false);
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">🎮</div>
-          <h1 className="text-3xl font-bold text-foreground">Good Game</h1>
-          <p className="text-muted-foreground mt-2">Level up by spreading good vibes</p>
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-6 py-12">
+      <button
+        onClick={toggleTheme}
+        className="fixed top-4 right-4 p-2 rounded-full bg-muted text-muted-foreground hover:text-foreground transition-colors"
+        data-testid="theme-toggle"
+        aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        {isDark ? "☀️" : "🌙"}
+      </button>
+
+      <div className="mb-8 text-center">
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl bg-primary/10 mb-4">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none" aria-label="Good Game logo">
+            <circle cx="24" cy="24" r="20" stroke="hsl(var(--primary))" strokeWidth="3" fill="none" />
+            <path d="M16 24 L22 30 L32 18" stroke="hsl(var(--primary))" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" fill="none" />
+          </svg>
         </div>
-        <Card>
-          <CardHeader>
-            <CardTitle>Welcome</CardTitle>
-            <CardDescription>Sign in or create an account to start playing</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="login">
-              <TabsList className="grid w-full grid-cols-2">
-                <TabsTrigger value="login">Login</TabsTrigger>
-                <TabsTrigger value="register">Register</TabsTrigger>
-              </TabsList>
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-username">Username</Label>
-                    <Input
-                      id="login-username"
-                      value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value)}
-                      placeholder="Enter username"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Password</Label>
-                    <Input
-                      id="login-password"
-                      type="password"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder="Enter password"
-                      required
-                    />
-                  </div>
-                  {loginError && <p className="text-sm text-destructive">{loginError}</p>}
-                  <Button type="submit" className="w-full" disabled={loginLoading}>
-                    {loginLoading ? "Signing in..." : "Sign In"}
-                  </Button>
-                </form>
-              </TabsContent>
-              <TabsContent value="register">
-                <form onSubmit={handleRegister} className="space-y-4 mt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="reg-username">Username</Label>
-                    <Input
-                      id="reg-username"
-                      value={regUsername}
-                      onChange={(e) => setRegUsername(e.target.value)}
-                      placeholder="Choose a username"
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="reg-password">Password</Label>
-                    <Input
-                      id="reg-password"
-                      type="password"
-                      value={regPassword}
-                      onChange={(e) => setRegPassword(e.target.value)}
-                      placeholder="Choose a password"
-                      required
-                    />
-                  </div>
-                  {regError && <p className="text-sm text-destructive">{regError}</p>}
-                  <Button type="submit" className="w-full" disabled={regLoading}>
-                    {regLoading ? "Creating account..." : "Create Account"}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+        <h1 className="text-xl font-bold tracking-tight">Good Game</h1>
+        <p className="text-muted-foreground text-sm mt-1">Recognize goodness. Build a better world.</p>
       </div>
+
+      <Card className="w-full max-w-sm">
+        <CardContent className="pt-6">
+          <form onSubmit={handleSubmit} className="space-y-4" autoComplete="on">
+            <div>
+              <label htmlFor="username" className="text-sm font-medium mb-1.5 block">Username</label>
+              <Input
+                id="username"
+                name="username"
+                data-testid="input-username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="e.g. nathan"
+                autoCapitalize="none"
+                autoCorrect="off"
+                autoComplete="username"
+              />
+            </div>
+
+            {mode === "signup" && (
+              <div>
+                <label htmlFor="displayName" className="text-sm font-medium mb-1.5 block">Display Name</label>
+                <Input
+                  id="displayName"
+                  name="displayName"
+                  data-testid="input-displayname"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="e.g. Nathan H."
+                  autoComplete="name"
+                />
+              </div>
+            )}
+
+            <div>
+              <label htmlFor="password" className="text-sm font-medium mb-1.5 block">Password</label>
+              <div className="relative">
+                <Input
+                  id="password"
+                  name="password"
+                  data-testid="input-password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "signup" ? "At least 6 characters" : "Enter your password"}
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  tabIndex={-1}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+            </div>
+
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={loading}
+              data-testid="button-submit"
+            >
+              {loading ? "..." : mode === "login" ? "Sign In" : "Create Account"}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => { setMode(mode === "login" ? "signup" : "login"); setPassword(""); }}
+              className="w-full text-sm text-muted-foreground hover:text-foreground text-center py-1 transition-colors"
+              data-testid="button-toggle-mode"
+            >
+              {mode === "login" ? "New here? Create an account" : "Already have an account? Sign in"}
+            </button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

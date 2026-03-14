@@ -1,92 +1,128 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { ArrowLeft, Trophy } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "../App";
 
-export default function LeaderboardPage() {
-  const { user } = useAuth();
+interface LeaderboardEntry {
+  id: number;
+  username: string;
+  displayName: string;
+  avatarColor: string;
+  totalReceived: number;
+  totalGiven: number;
+  level: number;
+  streakDays: number;
+}
 
-  const { data: leaderboard = [], isLoading } = useQuery<any[]>({
+export default function LeaderboardPage() {
+  const { currentUser } = useAuth();
+
+  const { data: leaderboard, isLoading } = useQuery<LeaderboardEntry[]>({
     queryKey: ["/api/leaderboard"],
-    queryFn: async () => {
-      const res = await fetch("/api/leaderboard");
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
-    },
   });
 
-  const userRank = leaderboard.findIndex((u: any) => u.id === user?.id) + 1;
-
   return (
-    <div className="min-h-screen bg-background">
-      <header className="border-b border-border bg-card">
-        <div className="max-w-2xl mx-auto px-4 py-4 flex items-center gap-3">
-          <Link to="/">
-            <Button variant="ghost" size="icon">
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-          </Link>
-          <h1 className="text-xl font-bold text-foreground">Leaderboard</h1>
+    <div className="max-w-lg mx-auto px-4 pt-6 pb-4">
+      <div className="mb-6">
+        <h1 className="text-lg font-bold">Leaderboard</h1>
+        <p className="text-sm text-muted-foreground">
+          The people making the biggest impact. Ranked by points received from others.
+        </p>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map(i => (
+            <Card key={i}>
+              <CardContent className="py-4">
+                <div className="h-12 bg-muted animate-pulse rounded" />
+              </CardContent>
+            </Card>
+          ))}
         </div>
-      </header>
-
-      <main className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-        {user && userRank > 0 && (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="pt-4 pb-4">
-              <p className="text-sm text-muted-foreground">Your rank</p>
-              <p className="text-2xl font-bold text-primary">#{userRank}</p>
-              <p className="text-sm text-foreground">{user.xp} XP · Level {user.level}</p>
-            </CardContent>
-          </Card>
-        )}
-
+      ) : !leaderboard || leaderboard.length === 0 ? (
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-yellow-500" />
-              Top Players
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <p className="text-sm text-muted-foreground">Loading...</p>
-            ) : leaderboard.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No players yet. Be the first!</p>
-            ) : (
-              <div className="space-y-3">
-                {leaderboard.map((entry: any, index: number) => {
-                  const medals = ["🥇", "🥈", "🥉"];
-                  const isMe = entry.id === user?.id;
-                  return (
-                    <div
-                      key={entry.id}
-                      className={`flex items-center gap-3 p-2 rounded-lg ${
-                        isMe ? "bg-primary/10" : ""
-                      }`}
-                    >
-                      <span className="w-8 text-center font-bold text-sm">
-                        {index < 3 ? medals[index] : `#${index + 1}`}
-                      </span>
-                      <div className="flex-1">
-                        <p className={`text-sm font-medium ${isMe ? "text-primary" : "text-foreground"}`}>
-                          {entry.username} {isMe ? "(you)" : ""}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Level {entry.level} · {entry.giftsGiven} gifts given
-                        </p>
-                      </div>
-                      <span className="text-sm font-bold text-foreground">{entry.xp} XP</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+          <CardContent className="py-12 text-center">
+            <p className="text-3xl mb-3">🌍</p>
+            <p className="text-sm text-muted-foreground">
+              No one on the board yet. Start gifting points to see who rises.
+            </p>
           </CardContent>
         </Card>
-      </main>
+      ) : (
+        <div className="space-y-2">
+          {leaderboard.map((entry, index) => {
+            const isCurrentUser = entry.id === currentUser?.id;
+            const medals = ["🥇", "🥈", "🥉"];
+            const medal = medals[index] || null;
+
+            return (
+              <Card
+                key={entry.id}
+                className={`transition-all ${isCurrentUser ? "border-primary/40 bg-primary/5" : ""}`}
+                data-testid={`leaderboard-entry-${entry.id}`}
+              >
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-center gap-3">
+                    {/* Rank */}
+                    <div className="w-8 text-center flex-shrink-0">
+                      {medal ? (
+                        <span className="text-xl">{medal}</span>
+                      ) : (
+                        <span className="text-sm font-semibold text-muted-foreground">
+                          {index + 1}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Avatar */}
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+                      style={{ backgroundColor: entry.avatarColor }}
+                    >
+                      {entry.displayName[0]?.toUpperCase()}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-semibold truncate">
+                          {entry.displayName}
+                          {isCurrentUser && (
+                            <span className="text-xs font-normal text-muted-foreground ml-1">(you)</span>
+                          )}
+                        </p>
+                        <span className="text-xs text-primary font-medium flex-shrink-0">Lv.{entry.level}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {entry.streakDays > 0 && `${entry.streakDays}d streak · `}
+                        Given {entry.totalGiven} pts
+                      </p>
+                    </div>
+
+                    {/* Score */}
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-base font-bold text-primary">{entry.totalReceived}</p>
+                      <p className="text-xs text-muted-foreground">received</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Explanation */}
+      <Card className="mt-6 border-primary/20 bg-primary/5">
+        <CardContent className="py-4">
+          <h3 className="text-sm font-semibold mb-1">How ranking works</h3>
+          <p className="text-xs text-muted-foreground leading-relaxed">
+            Rankings are based on total points received from others — a genuine measure of how many
+            people have recognized your positive actions. You can't buy or earn your way up; you rise
+            by being good and having others notice.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }
