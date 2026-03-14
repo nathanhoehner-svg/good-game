@@ -1,40 +1,68 @@
 import { build as esbuild } from "esbuild";
-import { execSync } from "child_process";
-import path from "path";
-import { fileURLToPath } from "url";
+import { build as viteBuild } from "vite";
+import { rm, readFile } from "fs/promises";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+// server deps to bundle to reduce openat(2) syscalls
+// which helps cold start times
+const allowlist = [
+  "@google/generative-ai",
+  "axios",
+  "bcryptjs",
+  "connect-pg-simple",
+  "cors",
+  "date-fns",
+  "drizzle-orm",
+  "drizzle-zod",
+  "express",
+  "express-rate-limit",
+  "express-session",
+  "jsonwebtoken",
+  "memorystore",
+  "multer",
+  "nanoid",
+  "nodemailer",
+  "openai",
+  "passport",
+  "passport-local",
+  "pg",
+  "stripe",
+  "uuid",
+  "ws",
+  "xlsx",
+  "zod",
+  "zod-validation-error",
+];
 
-async function build() {
-  console.log("Building client...");
-  execSync("npx vite build", { stdio: "inherit", cwd: path.resolve(__dirname, "..") });
+async function buildAll() {
+  await rm("dist", { recursive: true, force: true });
 
-  console.log("Building server...");
+  console.log("building client...");
+  await viteBuild();
+
+  console.log("building server...");
+  const pkg = JSON.parse(await readFile("package.json", "utf-8"));
+  const allDeps = [
+    ...Object.keys(pkg.dependencies || {}),
+    ...Object.keys(pkg.devDependencies || {}),
+  ];
+  const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+
   await esbuild({
-    entryPoints: [path.resolve(__dirname, "../server/index.ts")],
-    bundle: true,
+    entryPoints: ["server/index.ts"],
     platform: "node",
-    target: "node18",
-    format: "esm",
-    outfile: path.resolve(__dirname, "../dist/index.js"),
-    external: [
-      "better-sqlite3",
-      "express",
-      "express-session",
-    ],
-    banner: {
-      js: `
-import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-const require = createRequire(import.meta.url);
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-`,
+    bundle: true,
+    format: "cjs",
+    outfile: "dist/index.cjs",
+    define: {
+      "process.env.NODE_ENV": '"production"',
     },
+    minify: true,
+    external: externals,
+    logLevel: "info",
   });
-
-  console.log("Build complete!");
 }
 
-build().catch(console.error);
+buildAll().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
